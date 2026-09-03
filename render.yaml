@@ -1,0 +1,24 @@
+# Blueprint cho Render (https://render.com) — deploy bằng Docker + ổ đĩa bền vững.
+# Cách dùng: Render Dashboard → New → Blueprint → chọn repo này.
+services:
+  - type: web
+    name: photo-portfolio
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter          # cần plan có disk; free plan không mount được disk
+    region: singapore
+    healthCheckPath: /healthz
+    autoDeploy: true
+    envVars:
+      - key: Admin__Password
+        sync: false        # tự nhập trong dashboard, không lưu vào git
+      - key: Admin__TokenSecret
+        generateValue: true
+      - key: Storage__DataDir
+        value: /data
+      - key: Storage__MediaDir
+        value: /data/media
+    disk:
+      name: portfolio-data
+      mountPath: /data     # site.json + ảnh upload nằm ở đây, không mất khi redeploy
+      sizeGB: 5

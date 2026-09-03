@@ -17,7 +17,6 @@ public sealed class SiteStore
     };
 
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly string _dataDir;
     private readonly string _sitePath;
     private readonly string _mediaPath;
     private readonly string _historyDir;
@@ -25,14 +24,11 @@ public sealed class SiteStore
     private SiteConfig? _cache;
     private MediaLibrary? _mediaCache;
 
-    public SiteStore(IWebHostEnvironment env)
+    public SiteStore(StoragePaths paths)
     {
-        _dataDir = Path.Combine(env.ContentRootPath, "Data");
-        _historyDir = Path.Combine(_dataDir, "history");
-        Directory.CreateDirectory(_dataDir);
-        Directory.CreateDirectory(_historyDir);
-        _sitePath = Path.Combine(_dataDir, "site.json");
-        _mediaPath = Path.Combine(_dataDir, "media.json");
+        _historyDir = paths.HistoryDir;
+        _sitePath = paths.SiteFile;
+        _mediaPath = paths.MediaFile;
     }
 
     public static JsonSerializerOptions SerializerOptions => JsonOpts;

@@ -14,14 +14,15 @@ public sealed class AdminAuth
     private readonly string _password;
     private readonly TimeSpan _lifetime = TimeSpan.FromDays(7);
 
-    public AdminAuth(IConfiguration config)
+    public AdminAuth(IConfiguration config, StoragePaths paths)
     {
         _password = config["Admin:Password"] ?? "admin123";
         var secret = config["Admin:TokenSecret"];
         if (string.IsNullOrWhiteSpace(secret) || secret == "change-me")
         {
-            // Không có secret cấu hình -> sinh secret ổn định theo máy, lưu cạnh Data.
-            secret = LoadOrCreateLocalSecret();
+            // Không có secret cấu hình -> sinh secret ổn định và lưu trong thư mục dữ liệu
+            // (ổ đĩa bền vững) để phiên đăng nhập không mất sau mỗi lần redeploy.
+            secret = LoadOrCreateLocalSecret(paths.TokenSecretFile);
         }
         _key = Encoding.UTF8.GetBytes(secret);
     }
@@ -58,9 +59,8 @@ public sealed class AdminAuth
         return Convert.ToHexString(hmac.ComputeHash(Encoding.UTF8.GetBytes(payload))).ToLowerInvariant();
     }
 
-    private static string LoadOrCreateLocalSecret()
+    private static string LoadOrCreateLocalSecret(string path)
     {
-        var path = Path.Combine(AppContext.BaseDirectory, ".token-secret");
         if (File.Exists(path)) return File.ReadAllText(path).Trim();
         var generated = Convert.ToBase64String(RandomNumberGenerator.GetBytes(48));
         File.WriteAllText(path, generated);

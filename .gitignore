@@ -7,3 +7,6 @@ src/Portfolio.Api/Data/history/
 src/Portfolio.Api/wwwroot/media/*
 !src/Portfolio.Api/wwwroot/media/.gitkeep
 .token-secret
+
+# nội dung/thư viện do runtime sinh ra — không commit để không đè dữ liệu trên server
+src/Portfolio.Api/Data/*.json

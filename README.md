@@ -87,9 +87,61 @@ src/Portfolio.Api/
       └─ state.js · api.js · ui.js · canvas.js · imagetools.js   # phần admin
 ```
 
+## Deploy
+
+> **Vercel không chạy được app này.** Vercel chỉ có runtime Node/Python/Go/Ruby và static —
+> không có .NET, nên deploy sẽ ra output rỗng và mọi URL trả `404 NOT_FOUND`. Ngoài ra Vercel là
+> serverless với filesystem chỉ đọc, còn app này cần ghi `site.json` và ảnh upload lên đĩa.
+> Hãy chọn một host chạy container/.NET **có ổ đĩa bền vững**.
+
+App đã sẵn sàng cho container: `Dockerfile` ở gốc repo, cổng lấy từ biến `PORT`,
+dữ liệu trỏ ra ngoài code qua `Storage__DataDir` / `Storage__MediaDir`, có `/healthz` cho health check,
+và tự đọc `X-Forwarded-Proto` để cookie admin được đánh dấu `Secure` khi chạy sau HTTPS của host.
+
+### Chạy thử bằng Docker
+
+```bash
+docker build -t photo-portfolio .
+docker run -p 8080:8080 -v portfolio-data:/data -e Admin__Password=matkhaucuaban photo-portfolio
+```
+
+### Render (đơn giản nhất — có sẵn `render.yaml`)
+
+New → **Blueprint** → chọn repo → nhập `Admin__Password`. Blueprint đã khai báo disk 5GB mount vào `/data`.
+Lưu ý: **plan Free của Render không mount được disk** (ảnh upload sẽ mất mỗi lần restart) — cần plan Starter,
+hoặc chuyển sang lưu ảnh trên object storage (S3/R2/Azure Blob).
+
+### Azure App Service (Linux, có bậc Free F1 với dung lượng bền vững)
+
+```bash
+az webapp up --name ten-app-cua-ban --runtime "DOTNETCORE:10.0" --sku F1
+az webapp config appsettings set --name ten-app-cua-ban --resource-group <rg> \
+  --settings Admin__Password=... Admin__TokenSecret=... Storage__DataDir=/home/data Storage__MediaDir=/home/data/media
+```
+
+`/home` trên App Service là vùng lưu bền vững, nên trỏ dữ liệu vào đó.
+
+### Railway / Fly.io
+
+Dùng chung `Dockerfile`; chỉ cần tạo volume mount vào `/data` và đặt biến `Admin__Password`,
+`Admin__TokenSecret`. Cả hai đều tự truyền `PORT`.
+
+### Biến môi trường
+
+| Biến | Mặc định | Việc |
+|---|---|---|
+| `Admin__Password` | `admin123` | **bắt buộc đổi** khi deploy |
+| `Admin__TokenSecret` | tự sinh, lưu ở `DataDir/.token-secret` | khoá ký cookie admin |
+| `Storage__DataDir` | `<app>/Data` | nơi lưu `site.json`, `media.json`, lịch sử |
+| `Storage__MediaDir` | `<app>/wwwroot/media` | nơi lưu ảnh upload |
+| `PORT` | `8080` trong image | cổng lắng nghe |
+
+> `Data/*.json` và `wwwroot/media/*` **không** được commit — server sinh ra nội dung mẫu ở lần chạy đầu,
+> và dữ liệu bạn nhập qua trang admin nằm trên ổ đĩa của host chứ không nằm trong git.
+
 ## Ghi chú vận hành
 
-- **Xoá dữ liệu demo**: xoá `src/Portfolio.Api/Data/*.json` và ảnh trong `wwwroot/media/`, chạy lại → quay về nội dung mẫu.
+- **Xoá dữ liệu demo**: xoá `src/Portfolio.Api/Data/*.json` và ảnh trong `wwwroot/media/` (hoặc nội dung ổ đĩa `/data` khi deploy), chạy lại → quay về nội dung mẫu.
 - **Reduced motion**: người dùng bật "giảm chuyển động" trong hệ điều hành sẽ thấy trang tĩnh, không animation.
 - **Trước khi mở ra Internet**: đổi `Admin:Password` + `Admin:TokenSecret`, chạy sau HTTPS (cookie tự bật `Secure`),
   và cân nhắc thêm rate-limit cho `/api/auth/login`.

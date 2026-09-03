@@ -1,0 +1,10 @@
+**/bin/
+**/obj/
+**/.git/
+**/.vs/
+**/.vscode/
+**/.claude/
+**/Data/history/
+**/wwwroot/media/*
+!**/wwwroot/media/.gitkeep
+README.md

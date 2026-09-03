@@ -1,10 +1,21 @@
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.HttpOverrides;
+using Microsoft.Extensions.FileProviders;
 using Portfolio.Api.Models;
 using Portfolio.Api.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Các PaaS (Render, Railway, Fly, Heroku…) truyền cổng qua biến môi trường PORT.
+var port = Environment.GetEnvironmentVariable("PORT");
+if (!string.IsNullOrWhiteSpace(port) &&
+    string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("ASPNETCORE_URLS")))
+{
+    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+}
+
+builder.Services.AddSingleton<StoragePaths>();
 builder.Services.AddSingleton<SiteStore>();
 builder.Services.AddSingleton<AdminAuth>();
 builder.Services.AddResponseCompression(o => o.EnableForHttps = true);
@@ -13,12 +24,40 @@ builder.Services.Configure<FormOptions>(o =>
     o.MultipartBodyLengthLimit = 64L * 1024 * 1024; // 64 MB / request
     o.ValueLengthLimit = int.MaxValue;
 });
+builder.Services.Configure<ForwardedHeadersOptions>(o =>
+{
+    // Chạy sau reverse proxy của host: nhận lại scheme https thật để cookie
+    // admin được đánh dấu Secure và link tự sinh không bị http.
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+    o.KnownIPNetworks.Clear();
+    o.KnownProxies.Clear();
+});
 
 var app = builder.Build();
 
 var json = SiteStore.SerializerOptions;
-var mediaRoot = Path.Combine(app.Environment.WebRootPath ?? "wwwroot", "media");
-Directory.CreateDirectory(mediaRoot);
+var storage = app.Services.GetRequiredService<StoragePaths>();
+var mediaRoot = storage.MediaDir;
+
+app.UseForwardedHeaders();
+
+// HTML và JSON phải luôn được kiểm tra lại, nếu không trình duyệt (hoặc CDN của host)
+// có thể giữ bản cũ và người xem không thấy nội dung admin vừa lưu.
+app.Use((ctx, next) =>
+{
+    ctx.Response.OnStarting(() =>
+    {
+        var type = ctx.Response.ContentType ?? "";
+        if (!ctx.Response.Headers.ContainsKey("Cache-Control") &&
+            (type.StartsWith("text/html", StringComparison.OrdinalIgnoreCase) ||
+             type.StartsWith("application/json", StringComparison.OrdinalIgnoreCase)))
+        {
+            ctx.Response.Headers.CacheControl = "no-cache";
+        }
+        return Task.CompletedTask;
+    });
+    return next();
+});
 
 app.UseResponseCompression();
 app.UseDefaultFiles();
@@ -26,13 +65,24 @@ app.UseStaticFiles(new StaticFileOptions
 {
     OnPrepareResponse = ctx =>
     {
+        // Khi MediaDir vẫn nằm trong wwwroot (chạy local), middleware này bắt /media trước
+        // -> vẫn phải đặt cache dài cho ảnh, còn HTML/JS/CSS thì luôn kiểm tra lại.
         var path = ctx.Context.Request.Path.Value ?? "";
-        // Ảnh upload có tên duy nhất -> cache vĩnh viễn; HTML/JS/CSS thì luôn kiểm tra lại.
         ctx.Context.Response.Headers.CacheControl =
             path.StartsWith("/media/", StringComparison.OrdinalIgnoreCase)
                 ? "public,max-age=31536000,immutable"
                 : "no-cache";
     }
+});
+
+// Ảnh upload được phục vụ riêng vì có thể nằm ngoài wwwroot (ổ đĩa gắn ngoài).
+// Tên file có id duy nhất nên cache vĩnh viễn được.
+app.UseStaticFiles(new StaticFileOptions
+{
+    FileProvider = new PhysicalFileProvider(mediaRoot),
+    RequestPath = "/media",
+    OnPrepareResponse = ctx =>
+        ctx.Context.Response.Headers.CacheControl = "public,max-age=31536000,immutable"
 });
 
 // ---------------------------------------------------------------- helpers
@@ -41,6 +91,9 @@ static IResult Unauthorized401() => Results.Json(new { error = "Cần đăng nh�
 
 bool IsAuthed(HttpContext ctx, AdminAuth auth) =>
     auth.ValidateToken(ctx.Request.Cookies[AdminAuth.CookieName]);
+
+// Health check cho hosting platform
+app.MapGet("/healthz", () => Results.Ok(new { status = "ok" }));
 
 // ---------------------------------------------------------------- auth
 
