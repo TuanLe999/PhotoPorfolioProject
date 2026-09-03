@@ -1,0 +1,9 @@
+bin/
+obj/
+*.user
+
+# dữ liệu runtime — nội dung site, ảnh upload, secret sinh tại máy
+src/Portfolio.Api/Data/history/
+src/Portfolio.Api/wwwroot/media/*
+!src/Portfolio.Api/wwwroot/media/.gitkeep
+.token-secret

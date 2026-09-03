@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "portfolio",
+      "runtimeExecutable": "dotnet",
+      "runtimeArgs": ["run", "--project", "src/Portfolio.Api/Portfolio.Api.csproj", "--urls", "http://localhost:5080"],
+      "port": 5080
+    }
+  ]
+}

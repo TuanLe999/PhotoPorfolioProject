@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Studio — Quản trị portfolio</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500&family=Inter:wght@300;400;500;600&family=Playfair+Display:wght@400;500&family=Space+Grotesk:wght@300;400;500&family=DM+Serif+Display&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/assets/css/theme.css">
+  <link rel="stylesheet" href="/assets/css/render.css">
+  <link rel="stylesheet" href="/assets/css/admin.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236ea8fe'/%3E%3C/svg%3E">
+</head>
+<body class="adm">
+
+<!-- ------------------------------------------------------------ đăng nhập -->
+<div class="adm-login" id="login" hidden>
+  <form class="adm-login__box" id="loginForm">
+    <h1>Trang quản trị</h1>
+    <p>Nhập mật khẩu admin để chỉnh sửa portfolio.</p>
+    <input class="inp" type="password" id="loginPass" placeholder="Mật khẩu" autocomplete="current-password" required>
+    <div class="adm-login__err" id="loginErr"></div>
+    <button class="ui-btn ui-btn--primary ui-btn--block" type="submit" id="loginBtn">Đăng nhập</button>
+  </form>
+</div>
+
+<div class="adm-shell" id="shell" hidden>
+
+  <!-- ---------------------------------------------------------- top bar -->
+  <header class="adm-top">
+    <div class="adm-top__brand"><span class="adm-top__dot"></span> Portfolio Studio</div>
+    <span class="adm-badge" id="statusBadge">Đang tải…</span>
+    <div class="adm-top__spacer"></div>
+    <button class="ui-btn ui-btn--icon" id="undoBtn" title="Hoàn tác (Ctrl+Z)" disabled>↶</button>
+    <button class="ui-btn ui-btn--icon" id="redoBtn" title="Làm lại (Ctrl+Shift+Z)" disabled>↷</button>
+    <button class="ui-btn" id="previewBtn" title="Xem trước như khách (Ctrl+P)">Xem trước</button>
+    <a class="ui-btn ui-btn--ghost" href="/" target="_blank" rel="noopener">Mở trang thật ↗</a>
+    <button class="ui-btn ui-btn--primary" id="saveBtn" title="Lưu &amp; áp dụng (Ctrl+S)">Lưu &amp; áp dụng</button>
+    <button class="ui-btn ui-btn--ghost" id="logoutBtn" title="Đăng xuất">⎋</button>
+  </header>
+
+  <!-- ---------------------------------------------------------- sidebar -->
+  <aside class="adm-side">
+    <div class="adm-tabs" role="tablist">
+      <button class="adm-tab is-active" data-tab="content" role="tab">Bố cục</button>
+      <button class="adm-tab" data-tab="media" role="tab">Ảnh</button>
+      <button class="adm-tab" data-tab="theme" role="tab">Tone màu</button>
+      <button class="adm-tab" data-tab="site" role="tab">Trang</button>
+      <button class="adm-tab" data-tab="history" role="tab">Lịch sử</button>
+    </div>
+
+    <div class="adm-panes">
+      <!-- bố cục -->
+      <section class="adm-pane is-active" data-pane="content">
+        <div class="adm-group">
+          <div class="adm-group__title">
+            Các khu vực
+            <button class="ui-btn ui-btn--icon" id="addSection" title="Thêm khu vực">＋</button>
+          </div>
+          <div class="adm-list" id="sectionList"></div>
+        </div>
+
+        <div class="adm-group" id="sectionSettings"></div>
+
+        <div class="adm-group">
+          <div class="adm-group__title">Thêm khối vào khu vực đang chọn</div>
+          <div class="adm-preset-row" id="addBlockRow"></div>
+        </div>
+
+        <div class="adm-group">
+          <div class="adm-group__title">Mẫu bố cục nhanh</div>
+          <div class="adm-list" id="templateList"></div>
+        </div>
+      </section>
+
+      <!-- ảnh -->
+      <section class="adm-pane" data-pane="media">
+        <div class="adm-group">
+          <div class="adm-drop" id="dropzone">
+            <b>Kéo ảnh vào đây</b>
+            <small>hoặc bấm để chọn — JPG, PNG, WebP, AVIF, GIF (≤25MB)</small>
+          </div>
+          <div class="adm-progress" id="uploadProgress"><i></i></div>
+          <input type="file" id="fileInput" accept="image/*" multiple hidden>
+        </div>
+
+        <div class="adm-group">
+          <div class="adm-group__title">
+            <span>Thư viện (<span id="mediaCount">0</span>)</span>
+            <button class="ui-btn ui-btn--icon" id="collageBtn" title="Ghép ảnh đã chọn">⊞</button>
+          </div>
+          <p class="adm-hint">Kéo ảnh từ đây thả vào khối trên canvas. Giữ <span class="adm-kbd">Ctrl</span> + bấm để chọn nhiều ảnh rồi ghép.</p>
+          <div class="adm-media" id="mediaGrid"></div>
+        </div>
+      </section>
+
+      <!-- tone màu -->
+      <section class="adm-pane" data-pane="theme">
+        <div class="adm-group">
+          <div class="adm-group__title">Bộ màu có sẵn</div>
+          <div class="adm-preset-row" id="palettePresets"></div>
+        </div>
+        <div class="adm-group" id="themeFields"></div>
+      </section>
+
+      <!-- trang -->
+      <section class="adm-pane" data-pane="site">
+        <div class="adm-group" id="siteFields"></div>
+        <div class="adm-group">
+          <div class="adm-group__title">
+            Gói dịch vụ
+            <button class="ui-btn ui-btn--icon" id="addService" title="Thêm gói">＋</button>
+          </div>
+          <div class="adm-list" id="serviceList"></div>
+        </div>
+      </section>
+
+      <!-- lịch sử -->
+      <section class="adm-pane" data-pane="history">
+        <div class="adm-group">
+          <div class="adm-group__title">
+            Bản lưu trước
+            <button class="ui-btn ui-btn--icon" id="reloadHistory" title="Tải lại">⟳</button>
+          </div>
+          <p class="adm-hint">Mỗi lần bấm “Lưu &amp; áp dụng”, bản cũ được giữ lại (30 bản gần nhất).</p>
+          <div class="adm-list" id="historyList"></div>
+        </div>
+        <div class="adm-group">
+          <div class="adm-group__title">Dữ liệu</div>
+          <button class="ui-btn ui-btn--block" id="exportBtn">Xuất site.json</button>
+          <div style="height:8px"></div>
+          <button class="ui-btn ui-btn--block" id="importBtn">Nhập từ file JSON</button>
+          <input type="file" id="importInput" accept="application/json" hidden>
+        </div>
+      </section>
+    </div>
+  </aside>
+
+  <!-- ---------------------------------------------------------- canvas -->
+  <div class="adm-canvas-wrap">
+    <div class="adm-canvas-bar">
+      <div class="seg" id="deviceSeg">
+        <button data-device="desktop" class="is-on">Desktop</button>
+        <button data-device="tablet">Tablet</button>
+        <button data-device="mobile">Mobile</button>
+      </div>
+      <span class="adm-hint" id="canvasHint">Bấm vào khối để chỉnh · kéo tay cầm ⠿ để đổi vị trí · kéo cạnh phải để đổi độ rộng</span>
+      <div class="adm-canvas-bar__spacer"></div>
+      <button class="ui-btn ui-btn--icon" id="replayBtn" title="Chạy lại animation">▷</button>
+      <button class="ui-btn ui-btn--icon" id="inspectorToggle" title="Bảng thuộc tính">☰</button>
+    </div>
+    <div class="adm-canvas-scroll" id="canvasScroll">
+      <div class="adm-canvas" id="canvas" data-device="desktop"></div>
+    </div>
+  </div>
+
+  <!-- ---------------------------------------------------------- inspector -->
+  <aside class="adm-inspector" id="inspector"></aside>
+</div>
+
+<!-- ------------------------------------------------------------ preview -->
+<div class="adm-preview" id="preview" hidden>
+  <div class="adm-preview__bar">
+    <strong style="font-size:13px;font-weight:500">Xem trước</strong>
+    <div class="seg" id="previewSeg">
+      <button data-device="desktop" class="is-on">Desktop</button>
+      <button data-device="tablet">Tablet</button>
+      <button data-device="mobile">Mobile</button>
+    </div>
+    <span class="adm-hint">Bản xem trước dùng đúng engine của trang thật — chưa lưu nên khách chưa thấy.</span>
+    <div class="spacer"></div>
+    <button class="ui-btn ui-btn--primary" id="previewSave">Lưu &amp; áp dụng</button>
+    <button class="ui-btn" id="previewClose">Đóng ✕</button>
+  </div>
+  <div class="adm-preview__stage">
+    <iframe class="adm-preview__frame" id="previewFrame" data-device="desktop" src="/preview.html" title="Xem trước portfolio"></iframe>
+  </div>
+</div>
+
+<!-- ------------------------------------------------------------ modal crop -->
+<div class="adm-modal" id="cropModal" hidden>
+  <div class="adm-modal__box">
+    <div class="adm-modal__head">
+      <h3>Cắt ảnh</h3>
+      <div class="spacer"></div>
+      <button class="ui-btn ui-btn--ghost" data-close-modal>✕</button>
+    </div>
+    <div class="adm-modal__body">
+      <div class="adm-side-by">
+        <div class="adm-crop" id="cropArea"></div>
+        <div>
+          <div class="f">
+            <div class="f__label">Tỉ lệ khung</div>
+            <div class="adm-preset-row" id="cropRatios"></div>
+          </div>
+          <div class="f">
+            <div class="f__label">Vùng cắt <b id="cropReadout">—</b></div>
+            <p class="adm-hint">Kéo khung để di chuyển, kéo 4 góc để đổi kích thước.</p>
+          </div>
+          <button class="ui-btn ui-btn--block" id="cropReset">Đặt lại toàn ảnh</button>
+        </div>
+      </div>
+    </div>
+    <div class="adm-modal__foot">
+      <span class="adm-hint">“Áp dụng” chỉ đổi vùng hiển thị (không phá ảnh gốc). “Xuất ảnh mới” tạo file mới trong thư viện.</span>
+      <div class="spacer"></div>
+      <button class="ui-btn" id="cropExport">Xuất ảnh mới</button>
+      <button class="ui-btn ui-btn--primary" id="cropApply">Áp dụng</button>
+    </div>
+  </div>
+</div>
+
+<!-- ------------------------------------------------------------ modal ghép ảnh -->
+<div class="adm-modal adm-modal--wide" id="collageModal" hidden>
+  <div class="adm-modal__box">
+    <div class="adm-modal__head">
+      <h3>Ghép ảnh</h3>
+      <div class="spacer"></div>
+      <button class="ui-btn ui-btn--ghost" data-close-modal>✕</button>
+    </div>
+    <div class="adm-modal__body">
+      <div class="adm-side-by">
+        <div class="adm-collage-preview"><canvas id="collageCanvas"></canvas></div>
+        <div id="collageControls"></div>
+      </div>
+    </div>
+    <div class="adm-modal__foot">
+      <span class="adm-hint" id="collageHint"></span>
+      <div class="spacer"></div>
+      <button class="ui-btn ui-btn--primary" id="collageSave">Lưu vào thư viện</button>
+    </div>
+  </div>
+</div>
+
+<div class="adm-toasts" id="toasts"></div>
+
+<script type="module" src="/assets/js/admin.js"></script>
+</body>
+</html>
