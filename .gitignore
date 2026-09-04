@@ -1,12 +1,17 @@
+# .NET
 bin/
 obj/
 *.user
 
-# dữ liệu runtime — nội dung site, ảnh upload, secret sinh tại máy
-src/Portfolio.Api/Data/history/
-src/Portfolio.Api/wwwroot/media/*
-!src/Portfolio.Api/wwwroot/media/.gitkeep
-.token-secret
+# Node / Vite
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.local
+.env.local
+.env.*.local
 
-# nội dung/thư viện do runtime sinh ra — không commit để không đè dữ liệu trên server
-src/Portfolio.Api/Data/*.json
+# Dữ liệu runtime: nội dung site, ảnh upload, secret sinh tại máy
+backend/Portfolio.Api/Data/
+backend/Portfolio.Api/wwwroot/media/
+.token-secret

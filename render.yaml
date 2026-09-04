@@ -1,8 +1,8 @@
-# Blueprint cho Render (https://render.com) — deploy bằng Docker + ổ đĩa bền vững.
-# Cách dùng: Render Dashboard → New → Blueprint → chọn repo này.
+# Blueprint cho Render: chỉ deploy BACK-END (.NET) kèm ổ đĩa bền vững.
+# Front-end React deploy trên Vercel, trỏ VITE_API_URL vào URL của service này.
 services:
   - type: web
-    name: photo-portfolio
+    name: photo-portfolio-api
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: starter          # cần plan có disk; free plan không mount được disk
@@ -14,6 +14,8 @@ services:
         sync: false        # tự nhập trong dashboard, không lưu vào git
       - key: Admin__TokenSecret
         generateValue: true
+      - key: Cors__AllowedOrigins__0
+        sync: false        # ví dụ: https://ten-app.vercel.app
       - key: Storage__DataDir
         value: /data
       - key: Storage__MediaDir

@@ -4,7 +4,7 @@
 **/.vs/
 **/.vscode/
 **/.claude/
-**/Data/history/
-**/wwwroot/media/*
-!**/wwwroot/media/.gitkeep
+**/node_modules/
+frontend/dist/
+**/Data/
 README.md

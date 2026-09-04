@@ -2,9 +2,15 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "portfolio",
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "frontend"],
+      "port": 5173
+    },
+    {
+      "name": "backend",
       "runtimeExecutable": "dotnet",
-      "runtimeArgs": ["run", "--project", "src/Portfolio.Api/Portfolio.Api.csproj", "--urls", "http://localhost:5080"],
+      "runtimeArgs": ["run", "--project", "backend/Portfolio.Api/Portfolio.Api.csproj", "--urls", "http://localhost:5080"],
       "port": 5080
     }
   ]
