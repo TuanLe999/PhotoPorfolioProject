@@ -16,6 +16,8 @@ services:
         generateValue: true
       - key: Cors__AllowedOrigins__0
         sync: false        # ví dụ: https://ten-app.vercel.app
+      - key: Storage__AzureBlob__ConnectionString
+        sync: false        # để trống thì ảnh lưu xuống disk bên dưới
       - key: Storage__DataDir
         value: /data
       - key: Storage__MediaDir

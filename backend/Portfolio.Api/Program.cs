@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.FileProviders;
 using Portfolio.Api.Models;
 using Portfolio.Api.Services;
+using Portfolio.Api.Services.Media;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -18,6 +19,20 @@ if (!string.IsNullOrWhiteSpace(port) &&
 builder.Services.AddSingleton<StoragePaths>();
 builder.Services.AddSingleton<SiteStore>();
 builder.Services.AddSingleton<AdminAuth>();
+
+// Nơi cất ảnh: có chuỗi kết nối Azure thì dùng Blob Storage, không thì lưu xuống đĩa.
+var blobOptions = builder.Configuration.GetSection("Storage:AzureBlob").Get<AzureBlobOptions>() ?? new AzureBlobOptions();
+var useAzureBlob = !string.IsNullOrWhiteSpace(blobOptions.ConnectionString);
+
+if (useAzureBlob)
+{
+    builder.Services.AddSingleton(blobOptions);
+    builder.Services.AddSingleton<IMediaStorage, AzureBlobMediaStorage>();
+}
+else
+{
+    builder.Services.AddSingleton<IMediaStorage, LocalMediaStorage>();
+}
 builder.Services.AddResponseCompression(o => o.EnableForHttps = true);
 builder.Services.Configure<FormOptions>(o =>
 {
@@ -48,8 +63,19 @@ builder.Services.AddCors(o => o.AddPolicy(CorsPolicy, policy => policy
 var app = builder.Build();
 
 var json = SiteStore.SerializerOptions;
-var storage = app.Services.GetRequiredService<StoragePaths>();
-var mediaRoot = storage.MediaDir;
+var mediaStorage = app.Services.GetRequiredService<IMediaStorage>();
+app.Logger.LogInformation("Nơi lưu ảnh: {Storage}", mediaStorage.Describe());
+
+// Chuyển ảnh cũ dưới đĩa lên blob (chạy nền để không làm chậm health check lúc khởi động).
+if (mediaStorage is AzureBlobMediaStorage blobStorage)
+{
+    var localMediaDir = app.Services.GetRequiredService<StoragePaths>().MediaDir;
+    app.Lifetime.ApplicationStarted.Register(() => _ = Task.Run(async () =>
+    {
+        try { await blobStorage.MigrateLocalFilesAsync(localMediaDir, app.Lifetime.ApplicationStopping); }
+        catch (Exception ex) { app.Logger.LogWarning(ex, "Bỏ qua bước chuyển ảnh cũ lên blob."); }
+    }));
+}
 
 app.UseForwardedHeaders();
 
@@ -75,18 +101,22 @@ app.UseResponseCompression();
 app.UseCors(CorsPolicy);
 
 // API không phục vụ giao diện — chỉ phục vụ ảnh đã upload.
-// Tên file có id duy nhất nên cache vĩnh viễn được.
-app.UseStaticFiles(new StaticFileOptions
+// Khi lưu ở đĩa: dùng static files (có ETag, hỗ trợ range) cho nhanh.
+if (!useAzureBlob)
 {
-    FileProvider = new PhysicalFileProvider(mediaRoot),
-    RequestPath = "/media",
-    OnPrepareResponse = ctx =>
+    app.UseStaticFiles(new StaticFileOptions
     {
-        ctx.Context.Response.Headers.CacheControl = "public,max-age=31536000,immutable";
-        // ảnh phải xem được từ domain của front-end
-        ctx.Context.Response.Headers.AccessControlAllowOrigin = "*";
-    }
-});
+        FileProvider = new PhysicalFileProvider(app.Services.GetRequiredService<StoragePaths>().MediaDir),
+        RequestPath = "/media",
+        OnPrepareResponse = ctx =>
+        {
+            // tên file có id duy nhất nên cache vĩnh viễn được
+            ctx.Context.Response.Headers.CacheControl = "public,max-age=31536000,immutable";
+            // ảnh phải xem được từ domain của front-end
+            ctx.Context.Response.Headers.AccessControlAllowOrigin = "*";
+        }
+    });
+}
 
 // ---------------------------------------------------------------- helpers
 
@@ -185,9 +215,9 @@ app.MapPost("/api/media", async (HttpContext ctx, SiteStore store, AdminAuth aut
         if (file.Length > 25L * 1024 * 1024) { skipped.Add(file.FileName + " (>25MB)"); continue; }
 
         var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
-        if (!MediaRules.AllowedExtensions.Contains(ext)) { skipped.Add(file.FileName + " (định dạng không hỗ trợ)"); continue; }
+        if (!MediaNaming.AllowedExtensions.Contains(ext)) { skipped.Add(file.FileName + " (định dạng không hỗ trợ)"); continue; }
 
-        var item = await StoreFileAsync(file.OpenReadStream(), ext, file.ContentType, file.FileName, mediaRoot);
+        var item = await mediaStorage.SaveAsync(file.OpenReadStream(), ext, file.ContentType, file.FileName);
         await store.AddMediaAsync(item);
         saved.Add(item);
     }
@@ -223,7 +253,7 @@ app.MapPost("/api/media/from-data-url", async (HttpContext ctx, SiteStore store,
     if (bytes.Length > 25L * 1024 * 1024) return Results.Json(new { error = "Ảnh vượt 25MB." }, statusCode: 400);
 
     using var ms = new MemoryStream(bytes);
-    var item = await StoreFileAsync(ms, ext, mime, body.FileName ?? "edited", mediaRoot);
+    var item = await mediaStorage.SaveAsync(ms, ext, mime, body.FileName ?? "edited");
     item.Tags.Add("edited");
     await store.AddMediaAsync(item);
     return Results.Json(item, json);
@@ -236,15 +266,28 @@ app.MapDelete("/api/media/{id}", async (string id, HttpContext ctx, SiteStore st
     var removed = await store.RemoveMediaAsync(id);
     if (removed is null) return Results.Json(new { error = "Không tìm thấy ảnh." }, statusCode: 404);
 
-    var path = Path.Combine(mediaRoot, Path.GetFileName(removed.FileName));
-    if (File.Exists(path)) { try { File.Delete(path); } catch { /* file đang bị giữ */ } }
+    await mediaStorage.DeleteAsync(removed.FileName);
     return Results.Ok(new { ok = true });
+});
+
+// Phục vụ ảnh qua API. Ở chế độ đĩa, middleware static files phía trên đã xử lý trước;
+// endpoint này dùng khi ảnh nằm trên Azure Blob mà container không cho đọc ẩn danh,
+// và làm chỗ dựa cho các URL /media/... đã lưu từ trước.
+app.MapGet("/media/{file}", async (string file, HttpContext ctx) =>
+{
+    var result = await mediaStorage.OpenReadAsync(file, ctx.RequestAborted);
+    if (result is null) return Results.NotFound();
+
+    ctx.Response.Headers.CacheControl = "public,max-age=31536000,immutable";
+    ctx.Response.Headers.AccessControlAllowOrigin = "*";
+    return Results.File(result.Content, result.ContentType, enableRangeProcessing: true);
 });
 
 // Gọi thẳng vào gốc API thì chỉ cho biết nó còn sống + trỏ sang front-end.
 app.MapGet("/", () => Results.Json(new
 {
     service = "Portfolio API",
+    storage = mediaStorage.Describe(),
     docs = new[] { "/api/site", "/api/media", "/healthz" }
 }));
 
@@ -252,31 +295,6 @@ app.Run();
 
 // ---------------------------------------------------------------- local funcs
 
-static async Task<MediaItem> StoreFileAsync(Stream source, string ext, string? contentType, string originalName, string mediaRoot)
-{
-    var id = Guid.NewGuid().ToString("n")[..12];
-    var slug = MediaRules.Slugify(Path.GetFileNameWithoutExtension(originalName));
-    var fileName = slug + "-" + id + ext;
-    var fullPath = Path.Combine(mediaRoot, fileName);
-
-    await using (var target = File.Create(fullPath))
-        await source.CopyToAsync(target);
-
-    int w, h;
-    await using (var probe = File.OpenRead(fullPath))
-        (w, h) = ImageInspector.GetSize(probe);
-
-    return new MediaItem
-    {
-        Id = id,
-        FileName = fileName,
-        Url = "/media/" + fileName,
-        Size = new FileInfo(fullPath).Length,
-        Width = w,
-        Height = h,
-        ContentType = contentType ?? "application/octet-stream"
-    };
-}
 
 /// <summary>Kẹp các giá trị layout/hiệu ứng về khoảng hợp lệ trước khi lưu.</summary>
 static void Sanitize(SiteConfig cfg)
@@ -310,22 +328,6 @@ static void Sanitize(SiteConfig cfg)
                 crop.H = Math.Clamp(crop.H, 1, 100 - crop.Y);
             }
         }
-    }
-}
-
-static class MediaRules
-{
-    public static readonly HashSet<string> AllowedExtensions =
-        new(StringComparer.OrdinalIgnoreCase) { ".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif" };
-
-    public static string Slugify(string input)
-    {
-        var chars = input.Trim().ToLowerInvariant()
-            .Select(c => char.IsLetterOrDigit(c) && c < 128 ? c : '-')
-            .ToArray();
-        var slug = new string(chars).Trim('-');
-        while (slug.Contains("--")) slug = slug.Replace("--", "-");
-        return string.IsNullOrEmpty(slug) ? "img" : slug[..Math.Min(slug.Length, 40)];
     }
 }
 

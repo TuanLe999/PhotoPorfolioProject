@@ -18,8 +18,9 @@ PhotoPorfolioProject/
 
 | Phần | Lựa chọn | Vì sao |
 |---|---|---|
-| Back-end | **ASP.NET Core 10 minimal API** (C#) | theo yêu cầu; không phụ thuộc NuGet ngoài |
-| Lưu trữ | **JSON file** (`site.json`, `media.json`) + ảnh trong thư mục media | deploy chỉ cần một ổ đĩa, không cần DB; ghi atomic + tự giữ 30 bản lịch sử |
+| Back-end | **ASP.NET Core 10 minimal API** (C#) | theo yêu cầu |
+| Nội dung | **JSON file** (`site.json`, `media.json`) | không cần DB; ghi atomic + tự giữ 30 bản lịch sử |
+| Ảnh | **Azure Blob Storage**, hoặc đĩa máy chủ | đổi bằng cấu hình, không sửa code; blob thì redeploy/đổi host không mất ảnh |
 | Front-end | **React 19 + TypeScript + Vite** | SPA 3 route, type an toàn từ model API xuống component |
 | Điều hướng | react-router-dom 7 | `/` portfolio · `/admin` quản trị · `/preview` khung xem trước |
 | State admin | store nhỏ tự viết + `useSyncExternalStore` | undo/redo, gộp bước khi kéo slider, tự lưu nháp — không cần Redux |
@@ -98,6 +99,46 @@ Chạy thử bằng Docker:
 docker build -t photo-portfolio-api . && docker run -p 8080:8080 -v portfolio-data:/data -e Admin__Password=matkhau photo-portfolio-api
 ```
 
+### 1b. Ảnh → Azure Blob Storage (khuyến nghị khi deploy)
+
+Mặc định ảnh lưu xuống đĩa máy chủ. Đặt chuỗi kết nối là app tự chuyển sang Azure Blob,
+không phải sửa code:
+
+```
+Storage__AzureBlob__ConnectionString=DefaultEndpointsProtocol=https;AccountName=...;AccountKey=...;EndpointSuffix=core.windows.net
+Storage__AzureBlob__ContainerName=media
+```
+
+Các bước trên Azure Portal:
+
+1. Tạo **Storage Account** (Standard, LRS là đủ), region Southeast Asia.
+2. Trong **Configuration**, bật **Allow Blob anonymous access** — để trình duyệt tải ảnh
+   thẳng từ blob, không tốn băng thông API. Không bật cũng chạy được: app tự nhận ra và
+   phục vụ ảnh qua endpoint `/media/...` (chậm hơn một chút).
+3. Copy **Access keys → Connection string** vào biến môi trường ở trên. Container `media`
+   được app tự tạo ở lần upload đầu.
+
+| Biến | Mặc định | Việc |
+|---|---|---|
+| `Storage__AzureBlob__ConnectionString` | rỗng | có giá trị = dùng Azure, rỗng = lưu đĩa |
+| `Storage__AzureBlob__ContainerName` | `media` | tên container |
+| `Storage__AzureBlob__PublicAccess` | `true` | cho đọc ảnh ẩn danh (tải thẳng từ blob) |
+| `Storage__AzureBlob__PublicBaseUrl` | rỗng | tên miền CDN đặt trước blob, ví dụ `https://cdn.studio.vn` |
+| `Storage__AzureBlob__MigrateLocalFiles` | `true` | lần đầu bật Azure, tự đẩy ảnh còn dưới đĩa lên container |
+
+**Chuyển từ đĩa sang blob**: chỉ cần thêm biến rồi restart. Lúc khởi động app tự copy ảnh cũ
+trong thư mục media lên container (chỉ copy, không xoá file gốc; chạy lại nhiều lần cũng không
+trùng lặp), nên các URL `/media/...` đã lưu trong `site.json` vẫn hoạt động. Ảnh upload mới sẽ
+có URL trỏ thẳng blob/CDN.
+
+Chạy thử ở máy không cần tài khoản Azure — dùng emulator [Azurite](https://learn.microsoft.com/azure/storage/common/storage-use-azurite):
+
+```bash
+npm install -g azurite && azurite-blob --location ./.azurite
+```
+
+rồi đặt `Storage__AzureBlob__ConnectionString=UseDevelopmentStorage=true`.
+
 ### 2. Front-end → Vercel
 
 Import repo → **Root Directory: `frontend`** (đã có `frontend/vercel.json` khai báo Vite + SPA rewrite).
@@ -116,9 +157,14 @@ Deploy xong, quay lại back-end thêm domain Vercel vào `Cors__AllowedOrigins_
 | `Admin__Password` | `admin123` | **bắt buộc đổi** khi deploy |
 | `Admin__TokenSecret` | tự sinh, lưu ở `DataDir/.token-secret` | khoá ký cookie admin |
 | `Cors__AllowedOrigins__0` | `http://localhost:5173` | domain front-end được phép gọi API |
-| `Storage__DataDir` | `<app>/Data` | nơi lưu `site.json`, `media.json`, lịch sử |
-| `Storage__MediaDir` | `<app>/wwwroot/media` | nơi lưu ảnh upload |
+| `Storage__DataDir` | `<app>/Data` | nơi lưu `site.json`, `media.json`, lịch sử — **vẫn cần ổ đĩa bền vững** |
+| `Storage__MediaDir` | `<app>/wwwroot/media` | nơi lưu ảnh khi **không** dùng Azure Blob |
+| `Storage__AzureBlob__*` | — | xem mục 1b |
 | `PORT` | `8080` trong image | cổng lắng nghe |
+
+> ⚠️ Blob mới chỉ lo phần **ảnh**. Nội dung trang (`site.json`) vẫn nằm ở `Storage__DataDir`,
+> nên host chạy API vẫn cần một ổ đĩa bền vững (Render disk, `/home` của Azure App Service…).
+> File này rất nhỏ (~10KB) nên disk 1GB nhỏ nhất cũng thừa.
 
 > `Data/` và ảnh upload **không** được commit — server sinh nội dung mẫu ở lần chạy đầu, còn dữ liệu
 > bạn nhập qua trang admin nằm trên ổ đĩa của host chứ không nằm trong git.
